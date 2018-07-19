@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 )
@@ -29,16 +30,25 @@ func main() {
 	}
 
 	done := make(chan interface{})
-	go printer(results, &wg, done)
+	var printerWait sync.WaitGroup
+	go printer(results, &printerWait, done)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		close(done)
+		printerWait.Wait()
+		os.Exit(1)
+	}()
 
 	for scanner.Scan() {
 		queue <- scanner.Text()
 	}
 	close(queue)
 	wg.Wait()
-	wg.Add(1)
 	close(done)
-	wg.Wait()
+	printerWait.Wait()
 }
 
 func worker(input chan string, result chan Result, wg *sync.WaitGroup) {
@@ -81,6 +91,7 @@ func formattedError(format string, args ...interface{}) error {
 }
 
 func printer(results chan Result, wg *sync.WaitGroup, done chan interface{}) {
+	wg.Add(1)
 	totalCount := 0
 Loop:
 	for {
