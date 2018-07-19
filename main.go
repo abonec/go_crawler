@@ -2,12 +2,13 @@ package main
 
 import (
 	"bufio"
-	"os"
-	"fmt"
-	"net/http"
 	"errors"
+	"fmt"
 	"io/ioutil"
+	"net/http"
+	"os"
 	"strings"
+	"sync"
 )
 
 const poolSize = 5
@@ -20,24 +21,32 @@ type Result struct {
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	queue := make(chan string)
-	defer close(queue)
 	results := make(chan Result)
 
+	var wg sync.WaitGroup
 	for i := 0; i < poolSize; i++ {
-		go worker(queue, results)
+		go worker(queue, results, &wg)
 	}
-	go printer(results)
+
+	done := make(chan interface{})
+	go printer(results, &wg, done)
 
 	for scanner.Scan() {
 		queue <- scanner.Text()
 	}
-
+	close(queue)
+	wg.Wait()
+	wg.Add(1)
+	close(done)
+	wg.Wait()
 }
 
-func worker(input chan string, result chan Result) {
+func worker(input chan string, result chan Result, wg *sync.WaitGroup) {
+	wg.Add(1)
 	for {
 		url, more := <-input
 		if !more {
+			wg.Done()
 			break
 		}
 		count, err := httpCount(url)
@@ -71,8 +80,24 @@ func formattedError(format string, args ...interface{}) error {
 	return errors.New(fmt.Sprintf(format, args...))
 }
 
-func printer(results chan Result) {
-	for result := range results {
-		fmt.Printf("Count for %s: %d\n", result.Url, result.Count)
+func printer(results chan Result, wg *sync.WaitGroup, done chan interface{}) {
+	totalCount := 0
+Loop:
+	for {
+		select {
+		case result, more := <-results:
+			if !more {
+				break
+			}
+			fmt.Printf("Count for %s: %d\n", result.Url, result.Count)
+			totalCount += result.Count
+		case _, more := <-done:
+			if !more {
+				break Loop
+			}
+
+		}
 	}
+	fmt.Printf("Total: %d\n", totalCount)
+	wg.Done()
 }
