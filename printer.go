@@ -5,6 +5,7 @@ import (
 )
 
 type Printer struct {
+	stopped    bool
 	results    <-chan *Result
 	stop       chan interface{}
 	totalCount int
@@ -12,6 +13,7 @@ type Printer struct {
 
 func NewPrinter(results <-chan *Result) *Printer {
 	return &Printer{
+		stopped: false,
 		results: results,
 		stop:    make(chan interface{}),
 	}
@@ -23,7 +25,7 @@ func (p *Printer) Start() {
 			select {
 			case <-p.stop:
 				p.stop <- 1
-				break
+				return
 			case result, more := <-p.results:
 				if !more {
 					break
@@ -36,10 +38,14 @@ func (p *Printer) Start() {
 }
 
 func (p *Printer) Stop() {
+	if p.stopped {
+		return
+	}
 	p.stop <- 1
 	<-p.stop
 	close(p.stop)
 	p.PrintOut()
+	p.stopped = true
 }
 
 func (p *Printer) PrintOut() {

@@ -24,14 +24,15 @@ type WorkerPool struct {
 
 func NewWorkerPool(limit int, logger Logger) *WorkerPool {
 	return &WorkerPool{
-		stopped: true,
-		limit:   limit, idleTimeout: time.Second, logger: logger,
-		jobQueue: make(chan Job),
-		jobStart: make(chan interface{}),
-		jobDone:  make(chan interface{}),
-		wg:       &sync.WaitGroup{},
-		mutex:    sync.RWMutex{},
-		done:     make(chan interface{}),
+		stopped:    true,
+		limit:      limit, idleTimeout: 5 * time.Second, logger: logger,
+		jobQueue:   make(chan Job),
+		jobStart:   make(chan interface{}),
+		jobDone:    make(chan interface{}),
+		wg:         &sync.WaitGroup{},
+		mutex:      sync.RWMutex{},
+		done:       make(chan interface{}),
+		workerDone: make(chan interface{}),
 	}
 }
 
@@ -84,10 +85,16 @@ func (p *WorkerPool) SendJob(job Job) {
 
 func (p *WorkerPool) SpawnWorker() {
 	p.wg.Add(1)
+	p.logger.Printf("New worker started")
+	defer p.logger.Printf("Worker done")
 	defer p.wg.Done()
 	p.currentSize++
 	for {
+		timeout := time.After(p.idleTimeout)
 		select {
+		case <-timeout:
+			p.workerDone <- 1
+			return
 		case job, ok := <-p.jobQueue:
 			if !ok {
 				p.workerDone <- 1
@@ -98,9 +105,9 @@ func (p *WorkerPool) SpawnWorker() {
 			p.jobDone <- 1
 		case _, ok := <-p.done:
 			if !ok {
+				p.workerDone <- 1
 				return
 			}
 		}
 	}
-
 }
