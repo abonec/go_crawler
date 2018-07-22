@@ -1,88 +1,32 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"sync"
 	"bufio"
+	"os"
 )
 
 const poolSize = 5
 
-type Result struct {
-	Url   string
-	Count int
-}
-
 func main() {
-	queue := make(chan string)
-	results := make(chan Result)
+	results := make(chan *Result)
+	logger := NewLogger()
 
-	var wg sync.WaitGroup
-	for i := 0; i < poolSize; i++ {
-		go worker(queue, results, &wg)
-	}
+	pool := NewWorkerPool(poolSize, logger)
+	pool.Start()
 
-	done := make(chan interface{})
-	var printerWait sync.WaitGroup
-	go printer(results, &printerWait, done)
+	printer := NewPrinter(results)
+	printer.Start()
 
-	handleInterrupt(&done, &printerWait)
-	scanStdin(queue)
+	handleInterrupt(pool, printer)
 
-	close(queue)
-	wg.Wait()
-	close(done)
-	printerWait.Wait()
+	scanStdin(pool, results)
+
+	pool.StopAndWait()
+	printer.Stop()
 }
-func scanStdin(queue chan string) {
+func scanStdin(pool *WorkerPool, results chan *Result) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		queue <- scanner.Text()
+		pool.SendJob(NewJob(scanner.Text(), results))
 	}
-}
-
-
-func worker(input chan string, result chan Result, wg *sync.WaitGroup) {
-	wg.Add(1)
-	for {
-		url, more := <-input
-		if !more {
-			wg.Done()
-			break
-		}
-		count, err := httpCount(url)
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
-		result <- Result{url, count}
-	}
-
-}
-
-
-func printer(results chan Result, wg *sync.WaitGroup, done chan interface{}) {
-	wg.Add(1)
-	totalCount := 0
-
-	func() {
-		for {
-			select {
-			case result, more := <-results:
-				if !more {
-					break
-				}
-				fmt.Printf("Count for %s: %d\n", result.Url, result.Count)
-				totalCount += result.Count
-			case _, more := <-done:
-				if !more {
-					return
-				}
-
-			}
-		}
-	}()
-	fmt.Printf("Total: %d\n", totalCount)
-	wg.Done()
 }
