@@ -2,33 +2,47 @@ package main
 
 import (
 	"fmt"
+	"context"
 )
 
 type Printer struct {
-	stopped    bool
+	isStopped  bool
 	results    <-chan *Result
-	stop       chan interface{}
+	stopChan   chan interface{}
+	wait       chan interface{}
 	totalCount int
+	ctx        context.Context
 }
 
-func NewPrinter(results <-chan *Result) *Printer {
+func NewPrinter(ctx context.Context, results <-chan *Result) *Printer {
 	return &Printer{
-		stopped: false,
-		results: results,
-		stop:    make(chan interface{}),
+		isStopped: false,
+		results:   results,
+		stopChan:  make(chan interface{}),
+		wait:      make(chan interface{}),
+		ctx:       ctx,
 	}
 }
 
+func (p *Printer) stop() {
+	p.PrintOut()
+	p.isStopped = true
+}
 func (p *Printer) Start() {
 	go func() {
+		defer func() {
+			p.stop()
+			close(p.wait)
+		}()
 		for {
 			select {
-			case <-p.stop:
-				p.stop <- 1
+			case <-p.ctx.Done():
+				return
+			case <-p.stopChan:
 				return
 			case result, more := <-p.results:
 				if !more {
-					break
+					return
 				}
 				fmt.Printf("Count for %s: %d\n", result.Url, result.Count)
 				p.totalCount += result.Count
@@ -37,15 +51,15 @@ func (p *Printer) Start() {
 	}()
 }
 
+func (p *Printer) Wait() {
+	<-p.wait
+}
+
 func (p *Printer) Stop() {
-	if p.stopped {
+	if p.isStopped {
 		return
 	}
-	p.stop <- 1
-	<-p.stop
-	close(p.stop)
-	p.PrintOut()
-	p.stopped = true
+	close(p.stopChan)
 }
 
 func (p *Printer) PrintOut() {

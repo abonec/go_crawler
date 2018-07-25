@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"os"
+	"context"
 )
 
 const poolSize = 5
@@ -10,19 +11,21 @@ const poolSize = 5
 func main() {
 	results := make(chan *Result)
 	logger := NewLogger()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	pool := NewWorkerPool(poolSize, logger)
 	pool.Start()
 
-	printer := NewPrinter(results)
+	printer := NewPrinter(ctx, results)
 	printer.Start()
 
-	handleInterrupt(pool, printer)
+	handleInterrupt(cancel, pool, printer)
 
 	scanStdin(pool, results)
 
 	pool.StopAndWait()
-	printer.Stop()
+	close(results)
+	printer.Wait()
 }
 func scanStdin(pool *WorkerPool, results chan *Result) {
 	scanner := bufio.NewScanner(os.Stdin)

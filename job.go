@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const word = "Go"
+
 type Job interface {
 	Do()
 }
@@ -47,6 +49,6 @@ func httpCount(url string) (int, error) {
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
-	count := strings.Count(string(body), "go")
+	count := strings.Count(string(body), word)
 	return count, nil
 }
