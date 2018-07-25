@@ -85,8 +85,6 @@ func (p *WorkerPool) SendJob(job Job) {
 
 func (p *WorkerPool) SpawnWorker() {
 	p.wg.Add(1)
-	p.logger.Printf("New worker started")
-	defer p.logger.Printf("Worker done")
 	defer p.wg.Done()
 	p.currentSize++
 	for {
