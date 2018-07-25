@@ -3,6 +3,7 @@ package main
 import (
 	"sync"
 	"time"
+	"context"
 )
 
 type WorkerPool struct {
@@ -20,9 +21,10 @@ type WorkerPool struct {
 	jobDone     chan interface{}
 	workerDone  chan interface{}
 	mutex       sync.RWMutex
+	ctx         context.Context
 }
 
-func NewWorkerPool(limit int, logger Logger) *WorkerPool {
+func NewWorkerPool(ctx context.Context, limit int, logger Logger) *WorkerPool {
 	return &WorkerPool{
 		stopped:    true,
 		limit:      limit, idleTimeout: 5 * time.Second, logger: logger,
@@ -33,6 +35,7 @@ func NewWorkerPool(limit int, logger Logger) *WorkerPool {
 		mutex:      sync.RWMutex{},
 		done:       make(chan interface{}),
 		workerDone: make(chan interface{}),
+		ctx:        ctx,
 	}
 }
 
@@ -42,14 +45,19 @@ func (p *WorkerPool) StartSupervisor() {
 		case <-p.jobStart:
 			p.mutex.Lock()
 			p.busyWorkers++
+			p.mutex.Unlock()
 		case <-p.jobDone:
 			p.mutex.Lock()
 			p.busyWorkers--
+			p.mutex.Unlock()
 		case <-p.workerDone:
 			p.mutex.Lock()
 			p.currentSize--
+			p.mutex.Unlock()
+		case <-p.ctx.Done():
+			p.Stop()
+			return
 		}
-		p.mutex.Unlock()
 	}
 }
 

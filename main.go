@@ -13,13 +13,13 @@ func main() {
 	logger := NewLogger()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	pool := NewWorkerPool(poolSize, logger)
+	pool := NewWorkerPool(ctx, poolSize, logger)
 	pool.Start()
 
 	printer := NewPrinter(ctx, results)
 	printer.Start()
 
-	handleInterrupt(cancel, pool, printer)
+	handleInterrupt(cancel, printer)
 
 	scanStdin(pool, results)
 
